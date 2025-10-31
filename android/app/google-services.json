@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "621290376467",
+    "project_id": "flavora-flutter-app",
+    "storage_bucket": "flavora-flutter-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:621290376467:android:83d5da33d6ec21df225ee6",
+        "android_client_info": {
+          "package_name": "com.example.flavora"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiXpAAKCS98uqX3anTYvj3RSzUY_11B9M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
