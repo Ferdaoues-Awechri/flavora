@@ -14,6 +14,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _auth = FirebaseAuth.instance;
 
+  // CONTROLLERS
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
@@ -29,9 +31,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords don't match")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Passwords don't match")));
       return;
     }
 
@@ -41,21 +42,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // Create user in Firebase Auth
       UserCredential userCredential = await _auth
           .createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
-          );
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
       User? user = userCredential.user;
       if (user != null) {
+        // Update Firebase Auth display name
+        await user.updateDisplayName(_usernameController.text.trim());
+
         // Send email verification
         await user.sendEmailVerification();
 
-        // Save to Firestore
+        // Save user in Firestore
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'uid': user.uid,
-          'username': user.email!.split('@')[0],
+          'username': _usernameController.text.trim(),
           'email': user.email,
-          'photoUrl': 'https://example.com/photo.jpg',
+          'photoUrl': 'https://example.com/photo.jpg', // default
           'favorite_categories': [],
           'createdAt': FieldValue.serverTimestamp(),
           'lastLogin': FieldValue.serverTimestamp(),
@@ -64,7 +68,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              "Account created ✅ Check your email for verification.",
+              "Account created ✅ Check your email to verify your account.",
             ),
           ),
         );
@@ -72,21 +76,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         Navigator.pushReplacementNamed(context, '/login');
       }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? "Registration failed")),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message ?? "Registration failed")));
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
   // -------------------------------------
-  // GOOGLE SIGN-IN REGISTRATION
+  // GOOGLE SIGN-IN
   // -------------------------------------
   Future<void> _signInWithGoogle() async {
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return; // user canceled
+      if (googleUser == null) return;
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
@@ -96,13 +99,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         idToken: googleAuth.idToken,
       );
 
-      // Sign in to Firebase
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithCredential(credential);
+      final UserCredential userCredential =
+          await _auth.signInWithCredential(credential);
       final user = userCredential.user;
 
       if (user != null) {
-        // Save user data to Firestore if new
         final userDoc = FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid);
@@ -111,7 +112,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (!docSnapshot.exists) {
           await userDoc.set({
             'uid': user.uid,
-            'username': user.displayName ?? '',
+            'username': user.displayName ?? "",
             'email': user.email,
             'photoUrl': user.photoURL ?? '',
             'favorite_categories': [],
@@ -122,11 +123,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           await userDoc.update({'lastLogin': FieldValue.serverTimestamp()});
         }
 
-        // Send email verification if not verified
         if (!user.emailVerified) {
           await user.sendEmailVerification();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Email verification sent ✅")),
+            const SnackBar(content: Text("Email verification sent!")),
           );
         }
 
@@ -137,9 +137,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         Navigator.pushReplacementNamed(context, '/home');
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Google Sign-In failed: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Google Sign-In failed: $e")),
+      );
     }
   }
 
@@ -156,12 +156,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              //  APP LOGO
+              // LOGO
               Center(
                 child: Column(
                   children: [
                     Image.asset(
-                      'assets/images/flavora logo orange.png', // Your logo path
+                      'assets/images/orange_logo_500.png',
                       height: 120,
                     ),
                     const SizedBox(height: 16),
@@ -177,13 +177,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 40),
 
-              // 🌟 FORM SECTION
+              // FORM
               Form(
                 key: _formKey,
                 child: Column(
                   children: [
+                    // USERNAME
+                    TextFormField(
+                      controller: _usernameController,
+                      decoration: _inputDecoration("Username", "Choose a username"),
+                      validator: (value) =>
+                          value!.isEmpty ? "Username is required" : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // EMAIL
                     TextFormField(
                       controller: _emailController,
                       decoration: _inputDecoration("Email", "Enter your email"),
@@ -192,30 +203,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 16),
 
+                    // PASSWORD
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
                       decoration: _inputDecoration("Password", "Enter password")
                           .copyWith(
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                                color: Colors.grey,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
-                            ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            color: Colors.grey,
                           ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                        ),
+                      ),
                       validator: (value) =>
                           value!.length < 6 ? "At least 6 characters" : null,
                     ),
                     const SizedBox(height: 16),
 
+                    // CONFIRM PASSWORD
                     TextFormField(
                       controller: _confirmPasswordController,
                       obscureText: true,
@@ -228,6 +241,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(height: 32),
 
+                    // SIGN UP BUTTON
                     _isLoading
                         ? const CircularProgressIndicator()
                         : SizedBox(
@@ -254,7 +268,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                     const SizedBox(height: 16),
 
-                    // 🌟 GOOGLE SIGN-IN BUTTON
+                    // GOOGLE SIGN IN
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -283,6 +297,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                     const SizedBox(height: 24),
 
+                    // LOGIN LINK
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -310,6 +325,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
+  // INPUT DECORATION
   InputDecoration _inputDecoration(String label, String hint) {
     return InputDecoration(
       labelText: label,

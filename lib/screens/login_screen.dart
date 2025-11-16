@@ -93,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 // 🔸 Logo on top center
                 Image.asset(
-                  'assets/images/flavora logo orange.png',
+                  'assets/images/orange_logo_500.png',
                   width: 150,
                   height: 150,
                   color: const Color(0xFFF45104),
