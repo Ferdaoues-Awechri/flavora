@@ -31,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen> {
           children: [
             // App logo in the middle
             Image(
-              image: AssetImage('assets/images/flavora logo.png'),
+              image: AssetImage('assets/images/white_logo_500.png'),
               width: 180, 
             ),
           ],
