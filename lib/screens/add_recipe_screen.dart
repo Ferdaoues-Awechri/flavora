@@ -95,7 +95,7 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
         newImages = _webImages.map((b) => base64Encode(b)).toList();
       } else {
         for (var file in _pickedFiles) {
-          final bytes = await file.readAsBytes(); // fixed Web/Mobile compatibility
+          final bytes = await file.readAsBytes();
           newImages.add(base64Encode(bytes));
         }
       }
@@ -113,7 +113,6 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
         'images': allImages,
         'userId': user.uid,
         'username': user.displayName ?? 'User',
-        'photoUrl': user.photoURL ?? 'https://i.pravatar.cc/150',
         'likes': widget.recipe != null ? widget.recipe!['likes'] ?? [] : [],
         'savers': widget.recipe != null ? widget.recipe!['savers'] ?? [] : [],
         'likesCount': widget.recipe != null ? widget.recipe!['likesCount'] ?? 0 : 0,
@@ -123,9 +122,14 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
       };
 
       if (widget.recipe != null && widget.recipe!.containsKey('id')) {
-        await FirebaseFirestore.instance.collection('recipes').doc(widget.recipe!['id']).update(data);
+        // UPDATE
+        await FirebaseFirestore.instance
+            .collection('recipes')
+            .doc(widget.recipe!['id'])
+            .update(data);
         _showToast('Recipe updated!');
       } else {
+        // ADD
         await FirebaseFirestore.instance.collection('recipes').add(data);
         _showToast('Recipe added!');
       }
@@ -159,7 +163,9 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               right: 0,
               top: 0,
               child: GestureDetector(
-                  onTap: () => setState(() => _existingImages.removeAt(i)),
+                  onTap: () {
+                    setState(() => _existingImages.removeAt(i));
+                  },
                   child: const Icon(Icons.cancel, color: Colors.red))),
         ],
       ));
@@ -174,7 +180,9 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
               right: 0,
               top: 0,
               child: GestureDetector(
-                  onTap: () => setState(() => _webImages.removeAt(i)),
+                  onTap: () {
+                    setState(() => _webImages.removeAt(i));
+                  },
                   child: const Icon(Icons.cancel, color: Colors.red))),
         ],
       ));
@@ -209,14 +217,14 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                 decoration: const InputDecoration(labelText: 'Title'),
                 validator: (v) => v == null || v.trim().isEmpty ? 'Enter title' : null,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _descriptionController,
                 decoration: const InputDecoration(labelText: 'Description'),
                 maxLines: 4,
                 validator: (v) => v == null || v.trim().isEmpty ? 'Enter description' : null,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _tagsController,
                 decoration: const InputDecoration(
@@ -224,35 +232,27 @@ class _AddRecipeScreenState extends State<AddRecipeScreen> {
                   hintText: 'e.g. vegan, pasta, easy',
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: _pickImages,
-                    child: Container(
-                      height: 150,
-                      width: 150,
-                      decoration: BoxDecoration(border: Border.all(color: const Color(0xFFD0D5DD)), borderRadius: BorderRadius.circular(8), color: Colors.white),
-                      child: const Center(
-                        child: Icon(Icons.image, color: Color(0xFFF45104), size: 40),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: _buildImagesPreview()),
-                ],
-              ),
+              const SizedBox(height: 12),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: ElevatedButton.icon(
+                      onPressed: _pickImages,
+                      icon: const Icon(Icons.image),
+                      label: const Text('Pick Images'),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF45104)))),
+              const SizedBox(height: 12),
+              _buildImagesPreview(),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _submitRecipe,
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), backgroundColor: const Color(0xFFF45104)),
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12), backgroundColor: const Color(0xFFF45104)),
                   child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : Text(widget.recipe != null ? 'Save' : 'Add Recipe'),
                 ),
               ),
             ]),
-          ),
+          )
         ]),
       ),
     );
