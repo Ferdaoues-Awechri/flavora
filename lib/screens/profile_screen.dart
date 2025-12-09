@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import 'edit_profile_screen.dart';
-import 'add_recipe_screen.dart';
+import 'recipe_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? uid;
@@ -13,59 +14,137 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  String get viewedUid => widget.uid ?? FirebaseAuth.instance.currentUser!.uid;
+  String get viewedUid =>
+      widget.uid ?? FirebaseAuth.instance.currentUser!.uid;
   String? currentUid;
+
   Stream<DocumentSnapshot>? userStream;
   Stream<QuerySnapshot>? postsStream;
-  Stream<QuerySnapshot>? savedStream;
+
   int totalLikes = 0;
+  int totalSaves = 0;
 
   @override
   void initState() {
     super.initState();
     currentUid = FirebaseAuth.instance.currentUser?.uid;
-    _tabController = TabController(length: 2, vsync: this);
-    userStream = FirebaseFirestore.instance.collection('users').doc(viewedUid).snapshots();
-    postsStream = FirebaseFirestore.instance.collection('recipes').where('userId', isEqualTo: viewedUid).snapshots();
-    savedStream = currentUid == null
-        ? null
-        : FirebaseFirestore.instance.collection('recipes').where('savers', arrayContains: currentUid).snapshots();
 
-    // aggregate likes
+    _tabController = TabController(length: 2, vsync: this);
+
+    userStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(viewedUid)
+        .snapshots();
+
+    postsStream = FirebaseFirestore.instance
+        .collection('recipes')
+        .where('userId', isEqualTo: viewedUid)
+        .snapshots();
+
+    _listenToTotals();
+  }
+
+  // -----------------------------
+  // TOTAL LIKES + SAVES
+  // -----------------------------
+  void _listenToTotals() {
     FirebaseFirestore.instance
         .collection('recipes')
         .where('userId', isEqualTo: viewedUid)
         .snapshots()
         .listen((snap) {
-      int sum = 0;
+      int likeSum = 0;
+      int saveSum = 0;
+
       for (final doc in snap.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        sum += (data['likesCount'] ?? 0) as int;
+
+        likeSum += (data['likesCount'] ?? 0) as int;
+
+        final savers = data['savers'] as List? ?? [];
+        saveSum += savers.length;
       }
-      setState(() => totalLikes = sum);
+
+      setState(() {
+        totalLikes = likeSum;
+        totalSaves = saveSum;
+      });
     });
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  // -----------------------------
+  // GET SAVED POSTS STREAM
+  // -----------------------------
+  Stream<QuerySnapshot> getSavedPostsStream(String uid) async* {
+    final savedDocs = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('savedRecipes')
+        .get();
+
+    final ids =
+        savedDocs.docs.map((d) => d['recipeId'] as String).toList();
+
+    if (ids.isEmpty) {
+      yield QuerySnapshotFake([]);
+      return;
+    }
+
+    yield* FirebaseFirestore.instance
+        .collection('recipes')
+        .where(FieldPath.documentId, whereIn: ids)
+        .snapshots();
   }
 
+  // -----------------------------
+  // IMAGE BUILDER (BASE64 / URL)
+  // -----------------------------
+  Widget _buildRecipeImage(Map<String, dynamic> data) {
+    String? media = data['mediaUrl'];
+
+    if (media == null || media.isEmpty) {
+      return Container(color: Colors.grey[200]);
+    }
+
+    try {
+      final bytes = base64Decode(media);
+      return Image.memory(bytes, fit: BoxFit.cover);
+    } catch (_) {
+      return Image.network(
+        media,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            Container(color: Colors.grey[200]),
+      );
+    }
+  }
+
+  // -----------------------------
+  // AVATAR BUILDER
+  // -----------------------------
   Widget _avatarWidget(String? photoBase64) {
     if (photoBase64 != null && photoBase64.isNotEmpty) {
-      return CircleAvatar(radius: 56, backgroundImage: MemoryImage(base64Decode(photoBase64)));
+      return CircleAvatar(
+        radius: 56,
+        backgroundImage: MemoryImage(base64Decode(photoBase64)),
+      );
     }
-    return const CircleAvatar(radius: 56, child: Icon(Icons.person, size: 40));
+    return const CircleAvatar(
+        radius: 56, child: Icon(Icons.person, size: 40));
   }
 
+  // -----------------------------
+  // STAT LABEL
+  // -----------------------------
   Widget _statItem(String label, int value) {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(value.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        Text(value.toString(),
+            style:
+                const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         const SizedBox(height: 4),
         Text(label, style: const TextStyle(color: Colors.grey)),
       ],
@@ -74,187 +153,245 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    final isOwn = currentUid != null && viewedUid == currentUid;
+    final isOwn = currentUid == viewedUid;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFB),
       appBar: AppBar(
-        elevation: 0,
         backgroundColor: Colors.white,
-        leading: Navigator.canPop(context) ? BackButton(color: Colors.black) : null,
+        elevation: 0,
+        leading:
+            Navigator.canPop(context) ? BackButton(color: Colors.black) : null,
         centerTitle: true,
-        title: const Text('Profile', style: TextStyle(color: Colors.black, fontFamily: 'Inter')),
+        title:
+            const Text('Profile', style: TextStyle(color: Colors.black)),
       ),
+
       body: StreamBuilder<DocumentSnapshot>(
         stream: userStream,
         builder: (context, userSnap) {
-          if (userSnap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: Color(0xFFF45104)));
-          }
-          if (!userSnap.hasData || !userSnap.data!.exists) {
-            return const Center(child: Text('User not found'));
+          if (!userSnap.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(
+                    color: Color(0xFFF45104)));
           }
 
-          final userData = Map<String, dynamic>.from(userSnap.data!.data() as Map);
-          final username = userData['username'] ?? 'user';
-          final bio = userData['bio'] ?? '';
-          final followers = (userData['followers'] as List?) ?? [];
-          final following = (userData['following'] as List?) ?? [];
-          final photoBase64 = userData['photoBase64'] as String?;
-
-          final followersCount = followers.length;
-          final followingCount = following.length;
-          final isFollowing = currentUid != null && followers.contains(currentUid);
+          final data =
+              userSnap.data!.data() as Map<String, dynamic>? ?? {};
+          final username = data['username'] ?? "user";
+          final bio = data['bio'] ?? "";
+          final photoBase64 = data['photoBase64'];
 
           return Column(
             children: [
               const SizedBox(height: 20),
               Center(child: _avatarWidget(photoBase64)),
               const SizedBox(height: 12),
-              Text('@$username', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
+              Text('@$username',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 18)),
+              const SizedBox(height: 12),
+
+              // -----------------------------
+              // STATS (LIKES + SAVES)
+              // -----------------------------
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _statItem('Likes', totalLikes),
+                  _statItem("Likes", totalLikes),
                   const SizedBox(width: 36),
-                  _statItem('Followers', followersCount),
-                  const SizedBox(width: 36),
-                  _statItem('Following', followingCount),
+                  _statItem("Saved", totalSaves),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (bio.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28.0),
-                  child: Text(bio, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87)),
-                ),
-              const SizedBox(height: 14),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40.0),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: isOwn
-                      ? OutlinedButton(
-                        onPressed: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => EditProfileScreen(userData: userData)),
-                          );
-                        },
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFFF45104), width: 2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        child: const Text(
-                          'Edit profile',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFFF45104), // match theme color
-                            fontFamily: 'Inter',
-                            fontSize: 16,
-                          ),
-                        ),
-                      )
 
-                      : ElevatedButton(
-                          onPressed: () async {
-                            // implement follow toggle if needed
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isFollowing ? Colors.grey[300] : Colors.blue,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: Text(isFollowing ? 'Following' : 'Follow',
-                              style: TextStyle(color: isFollowing ? Colors.black : Colors.white, fontWeight: FontWeight.w600)),
-                        ),
+              const SizedBox(height: 12),
+              if (bio.isNotEmpty)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28.0),
+                  child: Text(bio,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.black87)),
                 ),
-              ),
+
+              const SizedBox(height: 14),
+
+              // -----------------------------
+              // EDIT BUTTON
+              // -----------------------------
+              if (isOwn)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 40.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  EditProfileScreen(userData: data)),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(
+                            color: Color(0xFFF45104), width: 2),
+                        shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(8)),
+                      ),
+                      child: const Text(
+                        'Edit Profile',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFF45104),
+                            fontFamily: 'Inter',
+                            fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ),
+
               const SizedBox(height: 16),
+
+              // -----------------------------
+              // TABS
+              // -----------------------------
               TabBar(
                 controller: _tabController,
                 labelColor: Colors.black,
                 unselectedLabelColor: Colors.grey,
                 indicatorColor: Colors.black,
                 tabs: const [
-                  Tab(icon: Icon(Icons.grid_on), text: 'Posts'),
-                  Tab(icon: Icon(Icons.bookmark), text: 'Saved'),
+                  Tab(icon: Icon(Icons.grid_on), text: "Posts"),
+                  Tab(icon: Icon(Icons.bookmark), text: "Saved"),
                 ],
               ),
+
+              // -----------------------------
+              // TAB CONTENT
+              // -----------------------------
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // Posts grid
-                    StreamBuilder<QuerySnapshot>(
-                      stream: postsStream,
-                      builder: (context, snap) {
-                        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-                        final docs = snap.data!.docs;
-                        if (docs.isEmpty) return const Center(child: Text('No posts yet'));
-                        return GridView.builder(
-                          padding: const EdgeInsets.all(6),
-                          itemCount: docs.length,
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
-                          itemBuilder: (context, i) {
-                            final d = docs[i];
-                            final data = Map<String, dynamic>.from(d.data() as Map);
-                            return GestureDetector(
-                              onTap: () {
-                                if (currentUid == viewedUid) {
-                                  Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) => AddRecipeScreen(recipe: {...data, 'id': d.id})));
-                                }
-                              },
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: data['images'] != null && (data['images'] as List).isNotEmpty
-                                    ? Image.memory(base64Decode(data['images'][0]), fit: BoxFit.cover)
-                                    : Container(color: Colors.grey[200]),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    // Saved tab
-                    (currentUid == null)
-                        ? const Center(child: Text('Login to see saved posts'))
-                        : StreamBuilder<QuerySnapshot>(
-                            stream: savedStream,
-                            builder: (context, snap) {
-                              if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-                              final docs = snap.data!.docs;
-                              if (docs.isEmpty) return const Center(child: Text('No saved posts'));
-                              return GridView.builder(
-                                padding: const EdgeInsets.all(6),
-                                itemCount: docs.length,
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
-                                itemBuilder: (context, i) {
-                                  final d = docs[i];
-                                  final data = Map<String, dynamic>.from(d.data() as Map);
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: data['images'] != null && (data['images'] as List).isNotEmpty
-                                        ? Image.memory(base64Decode(data['images'][0]), fit: BoxFit.cover)
-                                        : Container(color: Colors.grey[200]),
-                                  );
-                                },
-                              );
-                            },
-                          ),
+                    _buildPostsGrid(),
+                    _buildSavedGrid(),
                   ],
                 ),
-              ),
+              )
             ],
           );
         },
       ),
     );
   }
+
+  // -----------------------------
+  // POSTS GRID
+  // -----------------------------
+  Widget _buildPostsGrid() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: postsStream,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) {
+          return const Center(child: Text("No posts yet"));
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.all(6),
+          itemCount: docs.length,
+          gridDelegate:
+              const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 4,
+                  mainAxisSpacing: 4),
+          itemBuilder: (context, i) {
+            final d = docs[i];
+            final data =
+                Map<String, dynamic>.from(d.data() as Map);
+
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => RecipeDetailScreen(
+                              recipeId: d.id,
+                            )));
+              },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: _buildRecipeImage(data),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // -----------------------------
+  // SAVED GRID
+  // -----------------------------
+  Widget _buildSavedGrid() {
+    if (currentUid == null) {
+      return const Center(child: Text("Login to see saved posts"));
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: getSavedPostsStream(currentUid!),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) {
+          return const Center(child: Text("No saved posts"));
+        }
+
+        return GridView.builder(
+          padding: const EdgeInsets.all(6),
+          itemCount: docs.length,
+          gridDelegate:
+              const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 4,
+                  mainAxisSpacing: 4),
+          itemBuilder: (context, i) {
+            final data =
+                Map<String, dynamic>.from(docs[i].data() as Map);
+
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: _buildRecipeImage(data),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// SMALL FAKE SNAPSHOT CLASS FOR EMPTY STREAMS
+
+class QuerySnapshotFake implements QuerySnapshot {
+  final List<QueryDocumentSnapshot> _docs;
+
+  QuerySnapshotFake(this._docs);
+
+  @override
+  List<QueryDocumentSnapshot> get docs => _docs;
+
+  /* EVERYTHING ELSE UNUSED */
+  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -162,7 +162,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   children: [
                     Image.asset(
                       'assets/images/orange_logo_500.png',
-                      height: 120,
+                      width: 150,
+                      height: 150,
                     ),
                     const SizedBox(height: 16),
                     const Text(
