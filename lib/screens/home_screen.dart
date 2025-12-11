@@ -563,7 +563,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+
+                // TAGS
+                if (recipe['tags'] != null &&
+                    recipe['tags'] is List &&
+                    recipe['tags'].isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: (recipe['tags'] as List)
+                          .map(
+                            (tag) => Text(
+                              "#${tag.toString().toLowerCase()}",
+                              style: const TextStyle(
+                                color: Color(0xFFF45104),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+
                 const SizedBox(height: 6),
+
                 _buildExpandableDescription(
                   recipe['description'] ?? "",
                   recipeId,
